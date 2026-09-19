@@ -18,7 +18,6 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
     ContextTypes,
-    ConversationHandler,
     filters,
 )
 
@@ -33,8 +32,6 @@ ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
 TASHKENT_TZ = ZoneInfo("Asia/Tashkent")
 
 DB_FILE = "bookings.db"
-
-NAME, PHONE = range(2)
 
 
 # =========================
@@ -103,7 +100,14 @@ def is_time_booked(booking_date, booking_time):
     return row is not None
 
 
-def save_booking(user_id, name, phone, service, booking_date, booking_time):
+def save_booking(
+    user_id,
+    name,
+    phone,
+    service,
+    booking_date,
+    booking_time
+):
     conn = get_db()
 
     cursor = conn.execute("""
@@ -134,6 +138,116 @@ def save_booking(user_id, name, phone, service, booking_date, booking_time):
     conn.close()
 
     return booking_id
+
+
+# =========================
+# ADMIN PANEL
+# =========================
+
+def is_admin(user_id):
+    return ADMIN_CHAT_ID and str(user_id) == str(ADMIN_CHAT_ID)
+
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    if not is_admin(user.id):
+        await update.message.reply_text(
+            "❌ Bu bo‘lim faqat operator uchun."
+        )
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "📋 Bugungi bronlar",
+                callback_data="admin_today"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "📅 Barcha bronlar",
+                callback_data="admin_all"
+            )
+        ],
+    ]
+
+    await update.message.reply_text(
+        "👩‍💼 ADMIN PANEL\n\n"
+        "Kerakli bo‘limni tanlang 👇",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def show_admin_today(query):
+    conn = get_db()
+
+    today = datetime.now(
+        TASHKENT_TZ
+    ).date().isoformat()
+
+    rows = conn.execute("""
+        SELECT *
+        FROM bookings
+        WHERE booking_date = ?
+        ORDER BY booking_time
+    """, (today,)).fetchall()
+
+    conn.close()
+
+    if not rows:
+        await query.edit_message_text(
+            "📋 BUGUNGI BRONLAR\n\n"
+            "Bugun bronlar yo‘q."
+        )
+        return
+
+    text = "📋 BUGUNGI BRONLAR\n\n"
+
+    for row in rows:
+        text += (
+            f"🆔 #{row['id']}\n"
+            f"🕐 {row['booking_time']}\n"
+            f"👤 {row['name']}\n"
+            f"📞 {row['phone']}\n"
+            f"🩸 {row['service']}\n\n"
+        )
+
+    await query.edit_message_text(text)
+
+
+async def show_admin_all(query):
+    conn = get_db()
+
+    rows = conn.execute("""
+        SELECT *
+        FROM bookings
+        ORDER BY booking_date, booking_time
+        LIMIT 50
+    """).fetchall()
+
+    conn.close()
+
+    if not rows:
+        await query.edit_message_text(
+            "📋 BRONLAR\n\n"
+            "Hozircha bronlar yo‘q."
+        )
+        return
+
+    text = "📋 OXIRGI 50 TA BRON\n\n"
+
+    for row in rows:
+        text += (
+            f"🆔 #{row['id']}\n"
+            f"📅 {row['booking_date']}\n"
+            f"🕐 {row['booking_time']}\n"
+            f"👤 {row['name']}\n"
+            f"📞 {row['phone']}\n"
+            f"🩸 {row['service']}\n\n"
+        )
+
+    await query.edit_message_text(text)
 
 
 # =========================
@@ -377,12 +491,13 @@ def day_name(date):
 def get_dates():
     result = []
 
-    today = datetime.now(TASHKENT_TZ).date()
+    today = datetime.now(
+        TASHKENT_TZ
+    ).date()
 
     for i in range(14):
         date = today + timedelta(days=i)
 
-        # Yakshanba yopiq
         if date.weekday() == 6:
             continue
 
@@ -397,7 +512,8 @@ async def show_dates(query):
     for date in get_dates():
         keyboard.append([
             InlineKeyboardButton(
-                f"📅 {day_name(date)} — {date.strftime('%d.%m')}",
+                f"📅 {day_name(date)} — "
+                f"{date.strftime('%d.%m')}",
                 callback_data=f"date_{date.isoformat()}"
             )
         ])
@@ -430,7 +546,9 @@ def get_time_slots():
         hour = current // 60
         minute = current % 60
 
-        result.append(f"{hour:02d}:{minute:02d}")
+        result.append(
+            f"{hour:02d}:{minute:02d}"
+        )
 
         current += 40
 
@@ -485,7 +603,9 @@ async def show_times(query, selected_date):
         row.append(
             InlineKeyboardButton(
                 f"🕐 {time_text}",
-                callback_data=f"time_{selected_date}_{time_text}"
+                callback_data=(
+                    f"time_{selected_date}_{time_text}"
+                )
             )
         )
 
@@ -516,11 +636,43 @@ async def show_times(query, selected_date):
 # CALLBACK
 # =========================
 
-async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def booking_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     query = update.callback_query
+
     await query.answer()
 
     data = query.data
+
+    # =====================
+    # ADMIN
+    # =====================
+
+    if data == "admin_today":
+        if not is_admin(query.from_user.id):
+            await query.edit_message_text(
+                "❌ Ruxsat yo‘q."
+            )
+            return
+
+        await show_admin_today(query)
+        return
+
+    if data == "admin_all":
+        if not is_admin(query.from_user.id):
+            await query.edit_message_text(
+                "❌ Ruxsat yo‘q."
+            )
+            return
+
+        await show_admin_all(query)
+        return
+
+    # =====================
+    # BOOKING
+    # =====================
 
     if data == "booking_start":
         keyboard = [
@@ -557,8 +709,15 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data.startswith("cat_"):
-        category = data.replace("cat_", "")
-        await show_services(query, category)
+        category = data.replace(
+            "cat_",
+            ""
+        )
+
+        await show_services(
+            query,
+            category
+        )
 
     elif data.startswith("service_"):
         service_id = data.replace(
@@ -572,7 +731,9 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        context.user_data["service_id"] = service_id
+        context.user_data[
+            "service_id"
+        ] = service_id
 
         await show_dates(query)
 
@@ -582,7 +743,9 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ""
         )
 
-        context.user_data["booking_date"] = selected_date
+        context.user_data[
+            "booking_date"
+        ] = selected_date
 
         await show_times(
             query,
@@ -608,7 +771,6 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Ikki kishi bir vaqtda bosib yuborsa ham tekshiramiz
         if is_time_booked(
             selected_date,
             selected_time
@@ -619,7 +781,9 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        context.user_data["booking_time"] = selected_time
+        context.user_data[
+            "booking_time"
+        ] = selected_time
 
         service_name = SERVICES[service_id]
 
@@ -638,7 +802,9 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Endi ismingizni yozing 👇"
         )
 
-        context.user_data["booking_step"] = "name"
+        context.user_data[
+            "booking_step"
+        ] = "name"
 
     elif data == "cancel_booking":
         context.user_data.clear()
@@ -654,7 +820,9 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "edit_booking":
-        context.user_data["booking_step"] = "name"
+        context.user_data[
+            "booking_step"
+        ] = "name"
 
         await query.edit_message_text(
             "✏️ Ismingizni qaytadan yozing:"
@@ -665,8 +833,13 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ISM
 # =========================
 
-async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("booking_step") != "name":
+async def handle_name(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if context.user_data.get(
+        "booking_step"
+    ) != "name":
         return
 
     name = update.message.text.strip()
@@ -678,7 +851,9 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     context.user_data["name"] = name
-    context.user_data["booking_step"] = "phone"
+    context.user_data[
+        "booking_step"
+    ] = "phone"
 
     keyboard = [
         [
@@ -688,7 +863,9 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         ],
         [
-            KeyboardButton("❌ Bekor qilish")
+            KeyboardButton(
+                "❌ Bekor qilish"
+            )
         ]
     ]
 
@@ -706,8 +883,13 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # TELEFON
 # =========================
 
-async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("booking_step") != "phone":
+async def handle_phone(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    if context.user_data.get(
+        "booking_step"
+    ) != "phone":
         return
 
     phone = None
@@ -725,12 +907,25 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     context.user_data["phone"] = phone
-    context.user_data["booking_step"] = "confirm"
+    context.user_data[
+        "booking_step"
+    ] = "confirm"
 
-    service_id = context.user_data.get("service_id")
-    booking_date = context.user_data.get("booking_date")
-    booking_time = context.user_data.get("booking_time")
-    name = context.user_data.get("name")
+    service_id = context.user_data.get(
+        "service_id"
+    )
+
+    booking_date = context.user_data.get(
+        "booking_date"
+    )
+
+    booking_time = context.user_data.get(
+        "booking_time"
+    )
+
+    name = context.user_data.get(
+        "name"
+    )
 
     service_name = SERVICES.get(
         service_id,
@@ -763,7 +958,6 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
     ]
 
-    # Oddiy menyuga qaytarish
     await update.message.reply_text(
         "📋 QABUL MA'LUMOTLARI\n\n"
         f"👤 Ism: {name}\n"
@@ -782,14 +976,31 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # BRONNI YAKUNLASH
 # =========================
 
-async def finish_booking(query, context):
+async def finish_booking(
+    query,
+    context
+):
     user = query.from_user
 
-    service_id = context.user_data.get("service_id")
-    booking_date = context.user_data.get("booking_date")
-    booking_time = context.user_data.get("booking_time")
-    name = context.user_data.get("name")
-    phone = context.user_data.get("phone")
+    service_id = context.user_data.get(
+        "service_id"
+    )
+
+    booking_date = context.user_data.get(
+        "booking_date"
+    )
+
+    booking_time = context.user_data.get(
+        "booking_time"
+    )
+
+    name = context.user_data.get(
+        "name"
+    )
+
+    phone = context.user_data.get(
+        "phone"
+    )
 
     if not all([
         service_id,
@@ -802,24 +1013,26 @@ async def finish_booking(query, context):
             "❌ Ma'lumotlar to‘liq emas.\n\n"
             "Qabulga qaytadan yoziling."
         )
+
         context.user_data.clear()
         return
 
-    # Bandligini yana tekshiramiz
     if is_time_booked(
         booking_date,
         booking_time
     ):
         await query.edit_message_text(
-            "😔 Kechirasiz, bu vaqt boshqa mijoz tomonidan "
-            "band qilindi.\n\n"
+            "😔 Kechirasiz, bu vaqt boshqa mijoz "
+            "tomonidan band qilindi.\n\n"
             "Iltimos, boshqa vaqtni tanlang."
         )
 
         context.user_data.clear()
         return
 
-    service_name = SERVICES[service_id]
+    service_name = SERVICES[
+        service_id
+    ]
 
     booking_id = save_booking(
         user.id,
@@ -835,7 +1048,10 @@ async def finish_booking(query, context):
         "%Y-%m-%d"
     ).date()
 
-    # Mijozga
+    # =====================
+    # MIJOZGA
+    # =====================
+
     await query.edit_message_text(
         "🎉 QABUL MUVAFFAQIYATLI BAND QILINDI!\n\n"
         f"🆔 Bron raqami: #{booking_id}\n"
@@ -849,7 +1065,10 @@ async def finish_booking(query, context):
         "📍 General Uzoqov 32-uy"
     )
 
-    # Operatorga
+    # =====================
+    # OPERATORGA
+    # =====================
+
     if ADMIN_CHAT_ID:
         try:
             await query.get_bot().send_message(
@@ -860,7 +1079,8 @@ async def finish_booking(query, context):
                     f"👤 Ism: {name}\n"
                     f"📞 Telefon: {phone}\n"
                     f"🩸 Xizmat: {service_name}\n"
-                    f"📅 Sana: {date_obj.strftime('%d.%m.%Y')}\n"
+                    f"📅 Sana: "
+                    f"{date_obj.strftime('%d.%m.%Y')}\n"
                     f"🕐 Vaqt: {booking_time}\n"
                     f"👤 Telegram ID: {user.id}"
                 )
@@ -875,7 +1095,9 @@ async def finish_booking(query, context):
 # Eslatma
 # =========================
 
-async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
+async def reminder_job(
+    context: ContextTypes.DEFAULT_TYPE
+):
     now = datetime.now(TASHKENT_TZ)
 
     conn = get_db()
@@ -889,14 +1111,22 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
     for row in rows:
         try:
             booking_datetime = datetime.strptime(
-                f"{row['booking_date']} {row['booking_time']}",
+                f"{row['booking_date']} "
+                f"{row['booking_time']}",
                 "%Y-%m-%d %H:%M"
-            ).replace(tzinfo=TASHKENT_TZ)
+            ).replace(
+                tzinfo=TASHKENT_TZ
+            )
 
-            difference = booking_datetime - now
+            difference = (
+                booking_datetime - now
+            )
 
-            # 1 soat qolganda
-            if timedelta(minutes=0) < difference <= timedelta(minutes=60):
+            if (
+                timedelta(minutes=0)
+                < difference
+                <= timedelta(minutes=60)
+            ):
                 await context.bot.send_message(
                     chat_id=row["user_id"],
                     text=(
@@ -925,7 +1155,10 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
 # QOLGAN MENYU
 # =========================
 
-async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     text = update.message.text
 
     if text == "💰 Xizmatlar va narxlar":
@@ -949,10 +1182,11 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "ℹ️ Hijoma haqida":
         await update.message.reply_text(
             "🩸 HIJOMA HAQIDA\n\n"
-            "Hijoma qadimdan qo‘llanib kelgan an’anaviy "
-            "muolaja usullaridan biridir.\n\n"
-            "🌷 Shafran Hijomada muolajalar tozalik va "
-            "ehtiyotkorlikka rioya qilgan holda amalga oshiriladi."
+            "Hijoma qadimdan qo‘llanib kelgan "
+            "an’anaviy muolaja usullaridan biridir.\n\n"
+            "🌷 Shafran Hijomada muolajalar tozalik "
+            "va ehtiyotkorlikka rioya qilgan holda "
+            "amalga oshiriladi."
         )
 
     elif text == "📍 Manzil":
@@ -983,12 +1217,46 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
+# BOOKING TEXT HANDLER
+# =========================
+
+async def handle_booking_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    step = context.user_data.get(
+        "booking_step"
+    )
+
+    if step == "name":
+        await handle_name(
+            update,
+            context
+        )
+        return
+
+    if step == "phone":
+        await handle_phone(
+            update,
+            context
+        )
+        return
+
+    await menu(
+        update,
+        context
+    )
+
+
+# =========================
 # MAIN
 # =========================
 
 def main():
     if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN topilmadi")
+        raise RuntimeError(
+            "BOT_TOKEN topilmadi"
+        )
 
     init_db()
 
@@ -997,18 +1265,37 @@ def main():
         daemon=True
     ).start()
 
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(
-        CommandHandler("start", start)
+    app = (
+        Application
+        .builder()
+        .token(BOT_TOKEN)
+        .build()
     )
 
+    # START
+    app.add_handler(
+        CommandHandler(
+            "start",
+            start
+        )
+    )
+
+    # ADMIN
+    app.add_handler(
+        CommandHandler(
+            "admin",
+            admin_panel
+        )
+    )
+
+    # CALLBACK
     app.add_handler(
         CallbackQueryHandler(
             booking_callback
         )
     )
 
+    # CONTACT
     app.add_handler(
         MessageHandler(
             filters.CONTACT,
@@ -1016,6 +1303,7 @@ def main():
         )
     )
 
+    # TEXT
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
@@ -1023,6 +1311,7 @@ def main():
         )
     )
 
+    # REMINDER
     if app.job_queue:
         app.job_queue.run_repeating(
             reminder_job,
@@ -1030,28 +1319,15 @@ def main():
             first=10
         )
 
+    # RUN
     app.run_polling(
         drop_pending_updates=True
     )
 
 
 # =========================
-# BOOKING TEXT HANDLER
+# START
 # =========================
-
-async def handle_booking_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    step = context.user_data.get("booking_step")
-
-    if step == "name":
-        await handle_name(update, context)
-        return
-
-    if step == "phone":
-        await handle_phone(update, context)
-        return
-
-    await menu(update, context)
-
 
 if __name__ == "__main__":
     main()
