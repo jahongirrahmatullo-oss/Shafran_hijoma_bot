@@ -1,9 +1,31 @@
 import os
 import asyncio
+from threading import Thread
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
+
 TOKEN = os.environ["BOT_TOKEN"]
+
+
+# Render portini ochiq ushlab turish uchun
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Shafran bot ishlayapti!")
+
+    def log_message(self, format, *args):
+        pass
+
+
+def keep_alive():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    server.serve_forever()
+
 
 keyboard = [
     ["📅 Qabulga yozilish"],
@@ -12,6 +34,7 @@ keyboard = [
     ["📍 Manzil"],
     ["📞 Operator bilan bog‘lanish"]
 ]
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -23,6 +46,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             resize_keyboard=True
         )
     )
+
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -73,6 +97,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🕐 Har kuni 09:00–17:00"
         )
 
+
 async def main():
     app = Application.builder().token(TOKEN).build()
 
@@ -88,5 +113,7 @@ async def main():
     while True:
         await asyncio.sleep(3600)
 
+
 if __name__ == "__main__":
+    Thread(target=keep_alive, daemon=True).start()
     asyncio.run(main())
