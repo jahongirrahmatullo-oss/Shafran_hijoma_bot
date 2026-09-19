@@ -300,4 +300,61 @@ async def channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌷 Shafran Hijoma Telegram kanali:",
         reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    )async def main():
+    db().close()
+
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+
+    app.add_handler(MessageHandler(
+        filters.Regex("^💰 Xizmatlar va narxlar$"),
+        services
+    ))
+
+    app.add_handler(MessageHandler(
+        filters.Regex("^ℹ️ Hijoma haqida$"),
+        hijoma_info
+    ))
+
+    app.add_handler(MessageHandler(
+        filters.Regex("^📍 Manzil$"),
+        address
+    ))
+
+    app.add_handler(MessageHandler(
+        filters.Regex("^📞 Operator$"),
+        operator
+    ))
+
+    app.add_handler(MessageHandler(
+        filters.Regex("^📢 Telegram kanal$"),
+        channel
+    ))
+
+    app.add_handler(CallbackQueryHandler(
+        category,
+        pattern=r"^cat\|"
+    ))
+
+    app.add_handler(CallbackQueryHandler(
+        back_categories,
+        pattern=r"^back_categories$"
+    ))
+
+    app.add_handler(CallbackQueryHandler(
+        service_details,
+        pattern=r"^service\|"
+    ))
+
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+
+    print("BOT ISHLAYAPTI")
+
+    await asyncio.Event().wait()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
