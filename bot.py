@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -9,6 +10,7 @@ from telegram import (
     ReplyKeyboardMarkup,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
 )
 from telegram.ext import (
     Application,
@@ -16,14 +18,23 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
     ContextTypes,
+    ConversationHandler,
     filters,
 )
 
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# =========================
+# SOZLAMALAR
+# =========================
 
-# Toshkent vaqti
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
+
 TASHKENT_TZ = ZoneInfo("Asia/Tashkent")
+
+DB_FILE = "bookings.db"
+
+NAME, PHONE = range(2)
 
 
 # =========================
@@ -47,6 +58,113 @@ def start_server():
 
 
 # =========================
+# DATABASE
+# =========================
+
+def get_db():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db()
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS bookings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            service TEXT NOT NULL,
+            booking_date TEXT NOT NULL,
+            booking_time TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            reminded INTEGER DEFAULT 0
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def is_time_booked(booking_date, booking_time):
+    conn = get_db()
+
+    row = conn.execute("""
+        SELECT id
+        FROM bookings
+        WHERE booking_date = ?
+        AND booking_time = ?
+    """, (booking_date, booking_time)).fetchone()
+
+    conn.close()
+
+    return row is not None
+
+
+def save_booking(user_id, name, phone, service, booking_date, booking_time):
+    conn = get_db()
+
+    cursor = conn.execute("""
+        INSERT INTO bookings
+        (
+            user_id,
+            name,
+            phone,
+            service,
+            booking_date,
+            booking_time,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        user_id,
+        name,
+        phone,
+        service,
+        booking_date,
+        booking_time,
+        datetime.now(TASHKENT_TZ).isoformat()
+    ))
+
+    booking_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    return booking_id
+
+
+# =========================
+# XIZMATLAR
+# =========================
+
+SERVICES = {
+    "h1": "Hijoma + zaytunli massaj",
+    "h2": "Yuz hijomasi + yengil chiskasi bilan",
+    "h3": "Chertma hijoma",
+    "h4": "Lab uchun hijoma",
+    "h5": "Oyoqdagi shishlar va og‘riqlar uchun hijoma",
+    "h6": "Boshda hijoma",
+    "h7": "Detoks hijoma",
+
+    "m1": "Bitta sohaga massaj",
+    "m2": "Obshiy massaj",
+    "m3": "Koreyksya figura massaj",
+    "m4": "Relax massaj",
+    "m5": "Bo‘yin massaj",
+    "m6": "Oyoq sohasiga massaj",
+    "m7": "Bolalar massaji",
+    "m8": "Asalli massaj",
+
+    "z1": "Zuluk donasi",
+    "z2": "Vaginalniy zuluk",
+    "z3": "Zuluklar — Turkiyaniki 🇹🇷",
+}
+
+
+# =========================
 # ASOSIY MENYU
 # =========================
 
@@ -59,16 +177,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["📢 Telegram kanal"],
     ]
 
-    reply_markup = ReplyKeyboardMarkup(
-        keyboard,
-        resize_keyboard=True
-    )
-
     await update.message.reply_text(
         "🌷 Assalomu alaykum!\n\n"
         "🩸 Shafran Hijoma botiga xush kelibsiz!\n\n"
         "Kerakli bo‘limni tanlang 👇",
-        reply_markup=reply_markup
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True
+        )
     )
 
 
@@ -99,7 +215,7 @@ async def xizmatlar_menu(update: Update):
 # =========================
 
 async def hijoma(update: Update):
-    text = (
+    await update.message.reply_text(
         "🩸 HIJOMA XIZMATLARI\n\n"
         "1️⃣ Hijoma + zaytunli massaj — 300 000 so‘m\n\n"
         "2️⃣ Yuz hijomasi + yengil chiskasi bilan — 450 000 so‘m\n\n"
@@ -110,28 +226,13 @@ async def hijoma(update: Update):
         "7️⃣ Detoks hijoma — 300 000 so‘m"
     )
 
-    keyboard = [
-        ["💆 Massaj"],
-        ["🪱 Zuluk"],
-        ["💰 Xizmatlar"],
-        ["🔙 Asosiy menyu"],
-    ]
-
-    await update.message.reply_text(
-        text,
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True
-        )
-    )
-
 
 # =========================
 # MASSAJ
 # =========================
 
 async def massaj(update: Update):
-    text = (
+    await update.message.reply_text(
         "💆 MASSAJ XIZMATLARI\n\n"
         "1️⃣ Bitta sohaga massaj — 100 000 so‘m\n\n"
         "2️⃣ Obshiy massaj — 400 000 so‘m\n\n"
@@ -143,111 +244,56 @@ async def massaj(update: Update):
         "8️⃣ Asalli massaj — 150 000 so‘m"
     )
 
-    keyboard = [
-        ["🩸 Hijoma"],
-        ["🪱 Zuluk"],
-        ["💰 Xizmatlar"],
-        ["🔙 Asosiy menyu"],
-    ]
-
-    await update.message.reply_text(
-        text,
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True
-        )
-    )
-
 
 # =========================
 # ZULUK
 # =========================
 
 async def zuluk(update: Update):
-    text = (
+    await update.message.reply_text(
         "🪱 ZULUK XIZMATLARI\n\n"
         "1️⃣ Zuluk donasi — 50 000 so‘mdan\n\n"
         "2️⃣ Vaginalniy zuluk — 400 000 so‘m\n\n"
         "3️⃣ Zuluklar — Turkiyaniki 🇹🇷\n"
-        "   Narxi alohida aniqlanadi."
-    )
-
-    keyboard = [
-        ["🩸 Hijoma"],
-        ["💆 Massaj"],
-        ["💰 Xizmatlar"],
-        ["🔙 Asosiy menyu"],
-    ]
-
-    await update.message.reply_text(
-        text,
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True
-        )
+        "Narxi alohida aniqlanadi."
     )
 
 
 # =========================
-# QABULGA YOZILISH
+# QABUL BOSHLASH
 # =========================
 
-SERVICES = {
-    "h1": "Hijoma + zaytunli massaj",
-    "h2": "Yuz hijomasi + yengil chiskasi bilan",
-    "h3": "Chertma hijoma",
-    "h4": "Lab uchun hijoma",
-    "h5": "Oyoqdagi shishlar va og‘riqlar uchun hijoma",
-    "h6": "Boshda hijoma",
-    "h7": "Detoks hijoma",
-
-    "m1": "Bitta sohaga massaj",
-    "m2": "Obshiy massaj",
-    "m3": "Koreyksya figura massaj",
-    "m4": "Relax massaj",
-    "m5": "Bo‘yin massaj",
-    "m6": "Oyoq sohasiga massaj",
-    "m7": "Bolalar massaji",
-    "m8": "Asalli massaj",
-
-    "z1": "Zuluk donasi",
-    "z2": "Vaginalniy zuluk",
-    "z3": "Zuluklar — Turkiyaniki 🇹🇷",
-}
-
-
-async def qabulga_yozilish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton(
                 "🩸 Hijoma",
-                callback_data="category_h"
+                callback_data="cat_h"
             )
         ],
         [
             InlineKeyboardButton(
                 "💆 Massaj",
-                callback_data="category_m"
+                callback_data="cat_m"
             )
         ],
         [
             InlineKeyboardButton(
                 "🪱 Zuluk",
-                callback_data="category_z"
+                callback_data="cat_z"
             )
         ],
         [
             InlineKeyboardButton(
-                "🔙 Bekor qilish",
-                callback_data="booking_cancel"
+                "❌ Bekor qilish",
+                callback_data="cancel_booking"
             )
         ],
     ]
 
     await update.message.reply_text(
         "📅 QABULGA YOZILISH\n\n"
-        "Avval xizmat turini tanlang 👇\n\n"
-        "⏱ Har bir qabul uchun 40 daqiqa ajratiladi.",
+        "Xizmat turini tanlang 👇",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -267,6 +313,7 @@ async def show_services(query, category):
             ("h6", "6️⃣ Boshda hijoma"),
             ("h7", "7️⃣ Detoks hijoma"),
         ]
+
     elif category == "m":
         items = [
             ("m1", "1️⃣ Bitta sohaga massaj"),
@@ -278,6 +325,7 @@ async def show_services(query, category):
             ("m7", "7️⃣ Bolalar massaji"),
             ("m8", "8️⃣ Asalli massaj"),
         ]
+
     else:
         items = [
             ("z1", "1️⃣ Zuluk donasi"),
@@ -309,48 +357,47 @@ async def show_services(query, category):
 
 
 # =========================
-# SANA TANLASH
+# SANA
 # =========================
 
-def get_available_dates():
-    dates = []
+def day_name(date):
+    names = [
+        "Dushanba",
+        "Seshanba",
+        "Chorshanba",
+        "Payshanba",
+        "Juma",
+        "Shanba",
+        "Yakshanba"
+    ]
+
+    return names[date.weekday()]
+
+
+def get_dates():
+    result = []
+
     today = datetime.now(TASHKENT_TZ).date()
 
-    for i in range(8):
+    for i in range(14):
         date = today + timedelta(days=i)
 
-        # Yakshanba = 6
+        # Yakshanba yopiq
         if date.weekday() == 6:
             continue
 
-        dates.append(date)
+        result.append(date)
 
-    return dates
-
-
-def format_date(date):
-    days = {
-        0: "Dushanba",
-        1: "Seshanba",
-        2: "Chorshanba",
-        3: "Payshanba",
-        4: "Juma",
-        5: "Shanba",
-        6: "Yakshanba",
-    }
-
-    return f"{days[date.weekday()]} — {date.strftime('%d.%m')}"
+    return result
 
 
 async def show_dates(query):
     keyboard = []
 
-    for date in get_available_dates():
-        date_text = format_date(date)
-
+    for date in get_dates():
         keyboard.append([
             InlineKeyboardButton(
-                f"📅 {date_text}",
+                f"📅 {day_name(date)} — {date.strftime('%d.%m')}",
                 callback_data=f"date_{date.isoformat()}"
             )
         ])
@@ -363,34 +410,31 @@ async def show_dates(query):
     ])
 
     await query.edit_message_text(
-        "📅 SANA TANLANG\n\n"
-        "Yakshanba kuni qabul yo‘q.\n\n"
-        "Kerakli kunni tanlang 👇",
+        "📅 SANANI TANLANG\n\n"
+        "🚫 Yakshanba kuni qabul yo‘q.",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
 # =========================
-# VAQT TANLASH
+# VAQTLAR
 # =========================
 
 def get_time_slots():
-    slots = []
+    result = []
 
-    start_minutes = 9 * 60
-    end_minutes = 17 * 60
+    current = 9 * 60
+    end = 17 * 60
 
-    current = start_minutes
-
-    while current + 40 <= end_minutes:
+    while current + 40 <= end:
         hour = current // 60
         minute = current % 60
 
-        slots.append(f"{hour:02d}:{minute:02d}")
+        result.append(f"{hour:02d}:{minute:02d}")
 
         current += 40
 
-    return slots
+    return result
 
 
 async def show_times(query, selected_date):
@@ -399,15 +443,17 @@ async def show_times(query, selected_date):
         "%Y-%m-%d"
     ).date()
 
-    # Bugungi kun uchun o'tib ketgan vaqtlarni chiqarib tashlaymiz
     now = datetime.now(TASHKENT_TZ)
 
-    slots = []
+    available = []
 
     for time_text in get_time_slots():
-        hour, minute = map(int, time_text.split(":"))
+        hour, minute = map(
+            int,
+            time_text.split(":")
+        )
 
-        slot_datetime = datetime(
+        slot = datetime(
             date_obj.year,
             date_obj.month,
             date_obj.day,
@@ -416,12 +462,16 @@ async def show_times(query, selected_date):
             tzinfo=TASHKENT_TZ
         )
 
-        if date_obj == now.date() and slot_datetime <= now:
+        if date_obj == now.date() and slot <= now:
             continue
 
-        slots.append(time_text)
+        if not is_time_booked(
+            selected_date,
+            time_text
+        ):
+            available.append(time_text)
 
-    if not slots:
+    if not available:
         await query.edit_message_text(
             "😔 Bu kun uchun bo‘sh vaqt qolmagan.\n\n"
             "Boshqa kunni tanlang."
@@ -429,10 +479,9 @@ async def show_times(query, selected_date):
         return
 
     keyboard = []
-
     row = []
 
-    for time_text in slots:
+    for time_text in available:
         row.append(
             InlineKeyboardButton(
                 f"🕐 {time_text}",
@@ -455,15 +504,16 @@ async def show_times(query, selected_date):
     ])
 
     await query.edit_message_text(
-        f"📅 {format_date(date_obj)}\n\n"
+        f"📅 {day_name(date_obj)} — "
+        f"{date_obj.strftime('%d.%m.%Y')}\n\n"
         "🕐 BO‘SH VAQTNI TANLANG\n\n"
-        "Har bir qabul 40 daqiqa.",
+        "⏱ Har bir qabul: 40 daqiqa",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
 # =========================
-# CALLBACKLAR
+# CALLBACK
 # =========================
 
 async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -472,49 +522,49 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = query.data
 
-    # Booking boshlash
     if data == "booking_start":
         keyboard = [
             [
                 InlineKeyboardButton(
                     "🩸 Hijoma",
-                    callback_data="category_h"
+                    callback_data="cat_h"
                 )
             ],
             [
                 InlineKeyboardButton(
                     "💆 Massaj",
-                    callback_data="category_m"
+                    callback_data="cat_m"
                 )
             ],
             [
                 InlineKeyboardButton(
                     "🪱 Zuluk",
-                    callback_data="category_z"
+                    callback_data="cat_z"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    "🔙 Bekor qilish",
-                    callback_data="booking_cancel"
+                    "❌ Bekor qilish",
+                    callback_data="cancel_booking"
                 )
             ],
         ]
 
         await query.edit_message_text(
             "📅 QABULGA YOZILISH\n\n"
-            "Avval xizmat turini tanlang 👇",
+            "Xizmat turini tanlang 👇",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    # Kategoriya
-    elif data.startswith("category_"):
-        category = data.split("_")[1]
+    elif data.startswith("cat_"):
+        category = data.replace("cat_", "")
         await show_services(query, category)
 
-    # Xizmat
     elif data.startswith("service_"):
-        service_id = data.replace("service_", "")
+        service_id = data.replace(
+            "service_",
+            ""
+        )
 
         if service_id not in SERVICES:
             await query.edit_message_text(
@@ -522,44 +572,56 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        context.user_data["booking_service"] = service_id
+        context.user_data["service_id"] = service_id
 
         await show_dates(query)
 
-    # Sana
     elif data.startswith("date_"):
-        selected_date = data.replace("date_", "")
+        selected_date = data.replace(
+            "date_",
+            ""
+        )
 
         context.user_data["booking_date"] = selected_date
 
-        await show_times(query, selected_date)
+        await show_times(
+            query,
+            selected_date
+        )
 
-    # Sana menyusiga qaytish
     elif data == "booking_dates":
         await show_dates(query)
 
-    # Vaqt
     elif data.startswith("time_"):
         parts = data.split("_")
 
         selected_date = parts[1]
         selected_time = parts[2]
 
-        service_id = context.user_data.get("booking_service")
+        service_id = context.user_data.get(
+            "service_id"
+        )
 
         if not service_id:
             await query.edit_message_text(
-                "❌ Xizmat tanlanmagan."
+                "❌ Xizmat topilmadi."
             )
             return
 
-        service_name = SERVICES.get(
-            service_id,
-            "Noma'lum xizmat"
-        )
+        # Ikki kishi bir vaqtda bosib yuborsa ham tekshiramiz
+        if is_time_booked(
+            selected_date,
+            selected_time
+        ):
+            await query.edit_message_text(
+                "😔 Bu vaqt hozirgina band qilindi.\n\n"
+                "Iltimos, boshqa vaqtni tanlang."
+            )
+            return
 
-        context.user_data["booking_date"] = selected_date
         context.user_data["booking_time"] = selected_time
+
+        service_name = SERVICES[service_id]
 
         date_obj = datetime.strptime(
             selected_date,
@@ -568,24 +630,299 @@ async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(
             "✅ VAQT TANLANDI\n\n"
-            f"🩸 Xizmat: {service_name}\n"
-            f"📅 Sana: {format_date(date_obj)}\n"
-            f"🕐 Vaqt: {selected_time}\n\n"
+            f"🩸 Xizmat:\n{service_name}\n\n"
+            f"📅 Sana: {day_name(date_obj)} — "
+            f"{date_obj.strftime('%d.%m.%Y')}\n"
+            f"🕐 Vaqt: {selected_time}\n"
             "⏱ Davomiyligi: 40 daqiqa\n\n"
-            "Keyingi bosqichda ism va telefon raqamini "
-            "olib, qabulni tasdiqlaymiz."
+            "Endi ismingizni yozing 👇"
         )
 
-    # Bekor qilish
-    elif data == "booking_cancel":
+        context.user_data["booking_step"] = "name"
+
+    elif data == "cancel_booking":
+        context.user_data.clear()
+
         await query.edit_message_text(
-            "❌ Qabulga yozilish bekor qilindi.\n\n"
-            "Asosiy menyudan boshqa bo‘limni tanlashingiz mumkin."
+            "❌ Qabulga yozilish bekor qilindi."
+        )
+
+    elif data == "confirm_booking":
+        await finish_booking(
+            query,
+            context
+        )
+
+    elif data == "edit_booking":
+        context.user_data["booking_step"] = "name"
+
+        await query.edit_message_text(
+            "✏️ Ismingizni qaytadan yozing:"
         )
 
 
 # =========================
-# QOLGAN MENYULAR
+# ISM
+# =========================
+
+async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("booking_step") != "name":
+        return
+
+    name = update.message.text.strip()
+
+    if len(name) < 2:
+        await update.message.reply_text(
+            "Iltimos, ismingizni to‘liqroq yozing 🙂"
+        )
+        return
+
+    context.user_data["name"] = name
+    context.user_data["booking_step"] = "phone"
+
+    keyboard = [
+        [
+            KeyboardButton(
+                "📞 Telefon raqamni yuborish",
+                request_contact=True
+            )
+        ],
+        [
+            KeyboardButton("❌ Bekor qilish")
+        ]
+    ]
+
+    await update.message.reply_text(
+        "📞 Telefon raqamingizni yuboring:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+    )
+
+
+# =========================
+# TELEFON
+# =========================
+
+async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("booking_step") != "phone":
+        return
+
+    phone = None
+
+    if update.message.contact:
+        phone = update.message.contact.phone_number
+
+    elif update.message.text:
+        phone = update.message.text.strip()
+
+    if not phone:
+        await update.message.reply_text(
+            "📞 Telefon raqamingizni yuboring."
+        )
+        return
+
+    context.user_data["phone"] = phone
+    context.user_data["booking_step"] = "confirm"
+
+    service_id = context.user_data.get("service_id")
+    booking_date = context.user_data.get("booking_date")
+    booking_time = context.user_data.get("booking_time")
+    name = context.user_data.get("name")
+
+    service_name = SERVICES.get(
+        service_id,
+        "Noma'lum xizmat"
+    )
+
+    date_obj = datetime.strptime(
+        booking_date,
+        "%Y-%m-%d"
+    ).date()
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "✅ Tasdiqlash",
+                callback_data="confirm_booking"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "✏️ O‘zgartirish",
+                callback_data="edit_booking"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "❌ Bekor qilish",
+                callback_data="cancel_booking"
+            )
+        ],
+    ]
+
+    # Oddiy menyuga qaytarish
+    await update.message.reply_text(
+        "📋 QABUL MA'LUMOTLARI\n\n"
+        f"👤 Ism: {name}\n"
+        f"📞 Telefon: {phone}\n"
+        f"🩸 Xizmat: {service_name}\n"
+        f"📅 Sana: {day_name(date_obj)} — "
+        f"{date_obj.strftime('%d.%m.%Y')}\n"
+        f"🕐 Vaqt: {booking_time}\n"
+        "⏱ Davomiyligi: 40 daqiqa\n\n"
+        "Ma'lumotlar to‘g‘rimi?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# =========================
+# BRONNI YAKUNLASH
+# =========================
+
+async def finish_booking(query, context):
+    user = query.from_user
+
+    service_id = context.user_data.get("service_id")
+    booking_date = context.user_data.get("booking_date")
+    booking_time = context.user_data.get("booking_time")
+    name = context.user_data.get("name")
+    phone = context.user_data.get("phone")
+
+    if not all([
+        service_id,
+        booking_date,
+        booking_time,
+        name,
+        phone
+    ]):
+        await query.edit_message_text(
+            "❌ Ma'lumotlar to‘liq emas.\n\n"
+            "Qabulga qaytadan yoziling."
+        )
+        context.user_data.clear()
+        return
+
+    # Bandligini yana tekshiramiz
+    if is_time_booked(
+        booking_date,
+        booking_time
+    ):
+        await query.edit_message_text(
+            "😔 Kechirasiz, bu vaqt boshqa mijoz tomonidan "
+            "band qilindi.\n\n"
+            "Iltimos, boshqa vaqtni tanlang."
+        )
+
+        context.user_data.clear()
+        return
+
+    service_name = SERVICES[service_id]
+
+    booking_id = save_booking(
+        user.id,
+        name,
+        phone,
+        service_name,
+        booking_date,
+        booking_time
+    )
+
+    date_obj = datetime.strptime(
+        booking_date,
+        "%Y-%m-%d"
+    ).date()
+
+    # Mijozga
+    await query.edit_message_text(
+        "🎉 QABUL MUVAFFAQIYATLI BAND QILINDI!\n\n"
+        f"🆔 Bron raqami: #{booking_id}\n"
+        f"👤 Ism: {name}\n"
+        f"📞 Telefon: {phone}\n"
+        f"🩸 Xizmat: {service_name}\n"
+        f"📅 Sana: {day_name(date_obj)} — "
+        f"{date_obj.strftime('%d.%m.%Y')}\n"
+        f"🕐 Vaqt: {booking_time}\n\n"
+        "🌷 Sizni kutamiz!\n"
+        "📍 General Uzoqov 32-uy"
+    )
+
+    # Operatorga
+    if ADMIN_CHAT_ID:
+        try:
+            await query.get_bot().send_message(
+                chat_id=ADMIN_CHAT_ID,
+                text=(
+                    "🔔 YANGI QABUL!\n\n"
+                    f"🆔 Bron: #{booking_id}\n"
+                    f"👤 Ism: {name}\n"
+                    f"📞 Telefon: {phone}\n"
+                    f"🩸 Xizmat: {service_name}\n"
+                    f"📅 Sana: {date_obj.strftime('%d.%m.%Y')}\n"
+                    f"🕐 Vaqt: {booking_time}\n"
+                    f"👤 Telegram ID: {user.id}"
+                )
+            )
+        except Exception:
+            pass
+
+    context.user_data.clear()
+
+
+# =========================
+# Eslatma
+# =========================
+
+async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
+    now = datetime.now(TASHKENT_TZ)
+
+    conn = get_db()
+
+    rows = conn.execute("""
+        SELECT *
+        FROM bookings
+        WHERE reminded = 0
+    """).fetchall()
+
+    for row in rows:
+        try:
+            booking_datetime = datetime.strptime(
+                f"{row['booking_date']} {row['booking_time']}",
+                "%Y-%m-%d %H:%M"
+            ).replace(tzinfo=TASHKENT_TZ)
+
+            difference = booking_datetime - now
+
+            # 1 soat qolganda
+            if timedelta(minutes=0) < difference <= timedelta(minutes=60):
+                await context.bot.send_message(
+                    chat_id=row["user_id"],
+                    text=(
+                        "⏰ QABULINGIZGA 1 SOAT QOLDI!\n\n"
+                        f"🩸 {row['service']}\n"
+                        f"📅 {row['booking_date']}\n"
+                        f"🕐 {row['booking_time']}\n\n"
+                        "🌷 Sizni Shafran Hijomada kutamiz!"
+                    )
+                )
+
+                conn.execute("""
+                    UPDATE bookings
+                    SET reminded = 1
+                    WHERE id = ?
+                """, (row["id"],))
+
+        except Exception:
+            pass
+
+    conn.commit()
+    conn.close()
+
+
+# =========================
+# QOLGAN MENYU
 # =========================
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -603,14 +940,11 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🪱 Zuluk":
         await zuluk(update)
 
-    elif text == "💰 Xizmatlar":
-        await xizmatlar_menu(update)
-
     elif text == "🔙 Asosiy menyu":
         await start(update, context)
 
     elif text == "📅 Qabulga yozilish":
-        await qabulga_yozilish(update, context)
+        await start_booking(update, context)
 
     elif text == "ℹ️ Hijoma haqida":
         await update.message.reply_text(
@@ -642,6 +976,11 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "https://t.me/Shafran_hijoma"
         )
 
+    elif text == "❌ Bekor qilish":
+        context.user_data.clear()
+
+        await start(update, context)
+
 
 # =========================
 # MAIN
@@ -651,7 +990,8 @@ def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN topilmadi")
 
-    # Render health server
+    init_db()
+
     threading.Thread(
         target=start_server,
         daemon=True
@@ -663,25 +1003,54 @@ def main():
         CommandHandler("start", start)
     )
 
-    # Inline tugmalar
     app.add_handler(
         CallbackQueryHandler(
-            booking_callback,
-            pattern="^(booking_|category_|service_|date_|time_)"
+            booking_callback
         )
     )
 
-    # Oddiy menyu tugmalari
+    app.add_handler(
+        MessageHandler(
+            filters.CONTACT,
+            handle_phone
+        )
+    )
+
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            menu
+            handle_booking_text
         )
     )
+
+    if app.job_queue:
+        app.job_queue.run_repeating(
+            reminder_job,
+            interval=60,
+            first=10
+        )
 
     app.run_polling(
         drop_pending_updates=True
     )
+
+
+# =========================
+# BOOKING TEXT HANDLER
+# =========================
+
+async def handle_booking_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    step = context.user_data.get("booking_step")
+
+    if step == "name":
+        await handle_name(update, context)
+        return
+
+    if step == "phone":
+        await handle_phone(update, context)
+        return
+
+    await menu(update, context)
 
 
 if __name__ == "__main__":
