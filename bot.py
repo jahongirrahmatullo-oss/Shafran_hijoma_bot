@@ -3,7 +3,12 @@ import sqlite3
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -56,7 +61,6 @@ SERVICES = {
         ("Boshda hijoma", 200000),
         ("Detoks hijoma", 300000),
     ],
-
     "💆 Massaj": [
         ("Bitta sohaga massaj", 100000),
         ("Obshiy massaj", 400000),
@@ -67,7 +71,6 @@ SERVICES = {
         ("Bollar massaj", 60000),
         ("Asalli massaj", 150000),
     ],
-
     "🪱 Zuluk": [
         ("Zuluk donasi", 50000),
         ("Vaginalniy zuluk", 400000),
@@ -81,10 +84,10 @@ SERVICES = {
 # =========================================================
 
 def init_db():
-
     conn = sqlite3.connect(DB_FILE)
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS bookings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -96,13 +99,16 @@ def init_db():
             time TEXT,
             created_at TEXT
         )
-    """)
+        """
+    )
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS admins (
             user_id INTEGER PRIMARY KEY
         )
-    """)
+        """
+    )
 
     conn.commit()
     conn.close()
@@ -113,7 +119,6 @@ def init_db():
 # =========================================================
 
 def main_menu():
-
     keyboard = [
         ["💰 Xizmatlar va narxlar"],
         ["📅 Qabulga yozilish"],
@@ -133,7 +138,6 @@ def main_menu():
 # =========================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     context.user_data.clear()
 
     await update.message.reply_text(
@@ -149,17 +153,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================================================
 
 async def show_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     buttons = []
 
     for category in SERVICES:
-
-        buttons.append([
-            InlineKeyboardButton(
-                category,
-                callback_data="category|" + category
-            )
-        ])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    category,
+                    callback_data=f"category|{category}"
+                )
+            ]
+        )
 
     await update.message.reply_text(
         "💰 Xizmatlar va narxlar:",
@@ -168,7 +172,6 @@ async def show_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
     await query.answer()
 
@@ -177,26 +180,29 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
 
     for index, (name, price) in enumerate(SERVICES[category]):
-
         if price > 0:
             price_text = f"{price:,}".replace(",", " ")
             title = f"{name} — {price_text} so‘m"
         else:
             title = name
 
-        buttons.append([
-            InlineKeyboardButton(
-                title,
-                callback_data=f"service|{category}|{index}"
-            )
-        ])
-
-    buttons.append([
-        InlineKeyboardButton(
-            "⬅️ Orqaga",
-            callback_data="categories"
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    title,
+                    callback_data=f"service|{category}|{index}"
+                )
+            ]
         )
-    ])
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                "⬅️ Orqaga",
+                callback_data="categories"
+            )
+        ]
+    )
 
     await query.edit_message_text(
         f"{category}\n\nXizmatni tanlang:",
@@ -205,7 +211,6 @@ async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
     await query.answer()
 
@@ -231,7 +236,7 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton(
                 "📅 Qabulga yozilish",
-                callback_data=f"book|{category}|{index}"
+                callback_data=f"bookservice|{category}|{index}"
             )
         ],
         [
@@ -239,7 +244,7 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "⬅️ Orqaga",
                 callback_data=f"category|{category}"
             )
-        ]
+        ],
     ]
 
     await query.edit_message_text(
@@ -249,20 +254,20 @@ async def show_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def back_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
     await query.answer()
 
     buttons = []
 
     for category in SERVICES:
-
-        buttons.append([
-            InlineKeyboardButton(
-                category,
-                callback_data="category|" + category
-            )
-        ])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    category,
+                    callback_data=f"category|{category}"
+                )
+            ]
+        )
 
     await query.edit_message_text(
         "💰 Xizmatlar:",
@@ -275,7 +280,6 @@ async def back_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================================================
 
 async def hijoma_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     text = """🩸 HIJOMA HAQIDA
 
 🌙 HIJOMA — SUNNAT VA AN’ANAVIY MUOLАJA
@@ -328,29 +332,25 @@ General Uzoqov 32-uy.
 # =========================================================
 
 async def address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     buttons = [
-
         [
             InlineKeyboardButton(
                 "🗺️ Google Maps",
                 url=GOOGLE_MAPS
             )
         ],
-
         [
             InlineKeyboardButton(
                 "🟡 Yandex Maps",
                 url=YANDEX_MAPS
             )
         ],
-
         [
             InlineKeyboardButton(
                 "📞 Qo‘ng‘iroq qilish",
                 url="tel:+998945040918"
             )
-        ]
+        ],
     ]
 
     await update.message.reply_text(
@@ -368,7 +368,6 @@ async def address(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================================================
 
 async def operator(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     buttons = [
         [
             InlineKeyboardButton(
@@ -390,7 +389,6 @@ async def operator(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================================================
 
 async def channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     buttons = [
         [
             InlineKeyboardButton(
@@ -401,7 +399,7 @@ async def channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        "🌷 Shafran Hijoma Telegram kanali:",
+        "📢 Shafran Hijoma Telegram kanali:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -410,30 +408,30 @@ async def channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # QABULGA YOZILISH
 # =========================================================
 
-async def start_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    context.user_data.clear()
-
+async def booking_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
 
     for category in SERVICES:
-
-        buttons.append([
-            InlineKeyboardButton(
-                category,
-                callback_data="bookcategory|" + category
-            )
-        ])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    category,
+                    callback_data=f"bookcategory|{category}"
+                )
+            ]
+        )
 
     await update.message.reply_text(
-        "📅 QABULGA YOZILISH\n\n"
-        "Xizmat turini tanlang:",
+        "📅 Qabulga yozilish\n\n"
+        "Avval xizmat turini tanlang:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
 
-async def booking_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
+async def booking_category(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     query = update.callback_query
     await query.answer()
 
@@ -442,22 +440,31 @@ async def booking_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
 
     for index, (name, price) in enumerate(SERVICES[category]):
+        if price > 0:
+            price_text = f"{price:,}".replace(",", " ")
+            title = f"{name} — {price_text} so‘m"
+        else:
+            title = name
 
-        buttons.append([
-            InlineKeyboardButton(
-                name,
-                callback_data=f"bookservice|{category}|{index}"
-            )
-        ])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    title,
+                    callback_data=f"bookservice|{category}|{index}"
+                )
+            ]
+        )
 
     await query.edit_message_text(
-        "Xizmatni tanlang:",
+        f"{category}\n\nQaysi xizmatga yozilmoqchisiz?",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
 
-async def booking_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
+async def booking_service(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     query = update.callback_query
     await query.answer()
 
@@ -468,19 +475,26 @@ async def booking_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     name, price = SERVICES[category][index]
 
-    context.user_data["service"] = name
-    context.user_data["price"] = price
+    context.user_data["booking_service"] = name
+    context.user_data["booking_price"] = price
+
     context.user_data["booking_step"] = "date"
 
-    await query.message.reply_text(
-        "📅 Qaysi sana uchun yozilmoqchisiz?\n\n"
-        "Masalan:\n"
-        "25.09.2026"
+    await query.edit_message_text(
+        f"✅ Xizmat: {name}\n\n"
+        "📅 Qaysi sanaga yozilmoqchisiz?\n\n"
+        "Masalan: 25.09.2026"
     )
 
 
-async def booking_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# =========================================================
+# BOOKING TEXT FLOW
+# =========================================================
 
+async def booking_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     step = context.user_data.get("booking_step")
 
     if not step:
@@ -488,79 +502,60 @@ async def booking_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text.strip()
 
-    # SANA
     if step == "date":
-
-        context.user_data["date"] = text
+        context.user_data["booking_date"] = text
         context.user_data["booking_step"] = "time"
 
         await update.message.reply_text(
-            "🕐 Qaysi vaqtga yozilmoqchisiz?\n\n"
-            "Masalan:\n"
-            "14:00"
+            "🕐 Qaysi vaqtda kelmoqchisiz?\n\n"
+            "Masalan: 14:00"
         )
-
         return
 
-    # VAQT
     if step == "time":
-
-        context.user_data["time"] = text
+        context.user_data["booking_time"] = text
         context.user_data["booking_step"] = "name"
 
         await update.message.reply_text(
             "👤 Ismingizni yozing:"
         )
-
         return
 
-    # ISM
     if step == "name":
-
-        context.user_data["name"] = text
+        context.user_data["booking_name"] = text
         context.user_data["booking_step"] = "phone"
 
         await update.message.reply_text(
-            "📞 Telefon raqamingizni yozing:"
+            "📞 Telefon raqamingizni yozing:\n\n"
+            "Masalan: +998 90 123 45 67"
         )
-
         return
 
-    # TELEFON
     if step == "phone":
+        user = update.effective_user
 
-        service = context.user_data["service"]
-        price = context.user_data["price"]
-        date = context.user_data["date"]
-        time = context.user_data["time"]
-        name = context.user_data["name"]
-        phone = text
+        service = context.user_data.get("booking_service", "")
+        price = context.user_data.get("booking_price", 0)
+        date = context.user_data.get("booking_date", "")
+        time = context.user_data.get("booking_time", "")
+        name = context.user_data.get("booking_name", "")
 
         conn = sqlite3.connect(DB_FILE)
 
         conn.execute(
             """
             INSERT INTO bookings
+            (user_id, name, phone, service, price, date, time, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
             (
-                user_id,
+                user.id,
                 name,
-                phone,
+                text,
                 service,
                 price,
                 date,
                 time,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-            """,
-            (
-                update.effective_user.id,
-                name,
-                phone,
-                service,
-                price,
-                date,
-                time
             )
         )
 
@@ -570,21 +565,22 @@ async def booking_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if price > 0:
             price_text = f"{price:,}".replace(",", " ") + " so‘m"
         else:
-            price_text = "Narxi aniqlanadi"
-
-        await update.message.reply_text(
-            "✅ QABULGA YOZILISH QABUL QILINDI!\n\n"
-            f"🌷 Xizmat: {service}\n"
-            f"💰 Narx: {price_text}\n"
-            f"📅 Sana: {date}\n"
-            f"🕐 Vaqt: {time}\n"
-            f"👤 Ism: {name}\n"
-            f"📞 Telefon: {phone}\n\n"
-            "Operator siz bilan bog‘lanadi.",
-            reply_markup=main_menu()
-        )
+            price_text = "Narxi alohida aniqlanadi"
 
         context.user_data.clear()
+
+        await update.message.reply_text(
+            "✅ Qabul uchun so‘rovingiz qabul qilindi!\n\n"
+            f"👤 Ism: {name}\n"
+            f"📞 Telefon: {text}\n"
+            f"🌷 Xizmat: {service}\n"
+            f"💰 Narxi: {price_text}\n"
+            f"📅 Sana: {date}\n"
+            f"🕐 Vaqt: {time}\n\n"
+            "📞 Operator siz bilan bog‘lanib, "
+            "qabul vaqtini tasdiqlaydi.",
+            reply_markup=main_menu()
+        )
 
 
 # =========================================================
@@ -592,7 +588,6 @@ async def booking_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================================================
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     context.user_data.clear()
 
     await update.message.reply_text(
@@ -608,24 +603,16 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 class HealthHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
-
         self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
         self.end_headers()
-
-        self.wfile.write(
-            b"Shafran Hijoma bot ishlayapti"
-        )
+        self.wfile.write(b"Shafran Hijoma Bot is running")
 
     def log_message(self, format, *args):
         return
 
 
-def start_web_server():
-
-    port = int(
-        os.environ.get("PORT", "10000")
-    )
+def start_health_server():
+    port = int(os.environ.get("PORT", "10000"))
 
     server = HTTPServer(
         ("0.0.0.0", port),
@@ -636,35 +623,25 @@ def start_web_server():
 
 
 # =========================================================
-# BOTNI ISHGA TUSHIRISH
+# MAIN
 # =========================================================
 
 def main():
 
     if not BOT_TOKEN:
-
-        raise RuntimeError(
-            "BOT_TOKEN Render Environment Variables ichida topilmadi."
-        )
+        raise RuntimeError("BOT_TOKEN topilmadi")
 
     init_db()
 
-    # Render server
-    web_thread = threading.Thread(
-        target=start_web_server,
+    health_thread = threading.Thread(
+        target=start_health_server,
         daemon=True
     )
 
-    web_thread.start()
+    health_thread.start()
 
-    # Telegram bot
-    application = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .build()
-    )
+    application = Application.builder().token(BOT_TOKEN).build()
 
-    # COMMANDS
     application.add_handler(
         CommandHandler("start", start)
     )
@@ -673,7 +650,6 @@ def main():
         CommandHandler("cancel", cancel)
     )
 
-    # ASOSIY MENYU
     application.add_handler(
         MessageHandler(
             filters.Regex("^💰 Xizmatlar va narxlar$"),
@@ -684,7 +660,7 @@ def main():
     application.add_handler(
         MessageHandler(
             filters.Regex("^📅 Qabulga yozilish$"),
-            start_booking
+            booking_start
         )
     )
 
@@ -716,18 +692,10 @@ def main():
         )
     )
 
-    # XIZMATLAR CALLBACK
     application.add_handler(
         CallbackQueryHandler(
             show_category,
             pattern=r"^category\|"
-        )
-    )
-
-    application.add_handler(
-        CallbackQueryHandler(
-            back_categories,
-            pattern=r"^categories$"
         )
     )
 
@@ -738,7 +706,13 @@ def main():
         )
     )
 
-    # BOOKING CALLBACK
+    application.add_handler(
+        CallbackQueryHandler(
+            back_categories,
+            pattern=r"^categories$"
+        )
+    )
+
     application.add_handler(
         CallbackQueryHandler(
             booking_category,
@@ -753,7 +727,6 @@ def main():
         )
     )
 
-    # BOOKING TEXT
     application.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
@@ -761,15 +734,13 @@ def main():
         )
     )
 
-    print("================================")
-    print("SHAFRAN HIJOMA BOT ISHLAYAPTI")
-    print("================================")
-
-    application.run_polling()
+    application.run_polling(
+        drop_pending_updates=True
+    )
 
 
 # =========================================================
-# START
+# START PROGRAM
 # =========================================================
 
 if __name__ == "__main__":
