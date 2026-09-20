@@ -1253,6 +1253,7 @@ async def handle_booking_text(
 # =========================
 
 def main():
+    print("BOT STARTING...", flush=True)
     if not BOT_TOKEN:
         raise RuntimeError(
             "BOT_TOKEN topilmadi"
