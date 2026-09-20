@@ -1321,6 +1321,7 @@ def main():
         )
 
     # RUN
+    print("POLLING STARTING...", flush=True)
     app.run_polling(
         drop_pending_updates=True
     )
