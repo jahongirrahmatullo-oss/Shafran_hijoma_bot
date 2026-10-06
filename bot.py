@@ -44,6 +44,10 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"OK")
 
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
     def log_message(self, format, *args):
         pass
 
@@ -1323,7 +1327,7 @@ def main():
     # RUN
     print("POLLING STARTING...", flush=True)
     app.run_polling(
-        drop_pending_updates=True
+        drop_pending_updates=False
     )
 
 
