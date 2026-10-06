@@ -62,7 +62,39 @@ def start_server():
 # DATABASE
 # =========================
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+class PgConnection:
+    """Postgres ulanishi, sqlite3 bilan bir xil ko'rinishda ishlaydi."""
+
+    def __init__(self, url):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        self.conn = psycopg.connect(url, row_factory=dict_row)
+
+    def execute(self, sql, params=()):
+        return self.conn.execute(sql.replace("?", "%s"), params or None)
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
+
+
 def get_db():
+    global DATABASE_URL
+
+    if DATABASE_URL:
+        try:
+            return PgConnection(DATABASE_URL)
+        except ImportError as error:
+            # Kutubxona o'rnatilmagan bo'lsa, bot to'xtab qolmasin
+            print("POSTGRES UNAVAILABLE, USING SQLITE:", error, flush=True)
+            DATABASE_URL = None
+
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
@@ -71,22 +103,60 @@ def get_db():
 def init_db():
     conn = get_db()
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS bookings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            service TEXT NOT NULL,
-            booking_date TEXT NOT NULL,
-            booking_time TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            reminded INTEGER DEFAULT 0
-        )
-    """)
+    if DATABASE_URL:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bookings (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                service TEXT NOT NULL,
+                booking_date TEXT NOT NULL,
+                booking_time TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                reminded INTEGER DEFAULT 0
+            )
+        """)
+    else:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bookings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                service TEXT NOT NULL,
+                booking_date TEXT NOT NULL,
+                booking_time TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                reminded INTEGER DEFAULT 0
+            )
+        """)
 
     conn.commit()
+
+    # Eslatma kutayotgan yozuvlar xotirada turadi,
+    # shunda baza har daqiqada bezovta qilinmaydi.
+    rows = conn.execute("""
+        SELECT *
+        FROM bookings
+        WHERE reminded = 0
+    """).fetchall()
+
+    PENDING_REMINDERS.clear()
+    PENDING_REMINDERS.extend(dict(row) for row in rows)
+
     conn.close()
+
+    print(
+        "DB:",
+        "postgres" if DATABASE_URL else "sqlite",
+        "| pending reminders:",
+        len(PENDING_REMINDERS),
+        flush=True
+    )
+
+
+PENDING_REMINDERS = []
 
 
 def is_time_booked(booking_date, booking_time):
@@ -126,6 +196,7 @@ def save_booking(
             created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?)
+        RETURNING id
     """, (
         user_id,
         name,
@@ -136,10 +207,18 @@ def save_booking(
         datetime.now(TASHKENT_TZ).isoformat()
     ))
 
-    booking_id = cursor.lastrowid
+    booking_id = cursor.fetchone()["id"]
 
     conn.commit()
     conn.close()
+
+    PENDING_REMINDERS.append({
+        "id": booking_id,
+        "user_id": user_id,
+        "service": service,
+        "booking_date": booking_date,
+        "booking_time": booking_time,
+    })
 
     return booking_id
 
@@ -1104,15 +1183,7 @@ async def reminder_job(
 ):
     now = datetime.now(TASHKENT_TZ)
 
-    conn = get_db()
-
-    rows = conn.execute("""
-        SELECT *
-        FROM bookings
-        WHERE reminded = 0
-    """).fetchall()
-
-    for row in rows:
+    for row in list(PENDING_REMINDERS):
         try:
             booking_datetime = datetime.strptime(
                 f"{row['booking_date']} "
@@ -1126,11 +1197,12 @@ async def reminder_job(
                 booking_datetime - now
             )
 
-            if (
-                timedelta(minutes=0)
-                < difference
-                <= timedelta(minutes=60)
-            ):
+            # O'tib ketgan qabullar ro'yxatdan chiqariladi
+            if difference <= timedelta(minutes=0):
+                PENDING_REMINDERS.remove(row)
+                continue
+
+            if difference <= timedelta(minutes=60):
                 await context.bot.send_message(
                     chat_id=row["user_id"],
                     text=(
@@ -1142,17 +1214,19 @@ async def reminder_job(
                     )
                 )
 
+                PENDING_REMINDERS.remove(row)
+
+                conn = get_db()
                 conn.execute("""
                     UPDATE bookings
                     SET reminded = 1
                     WHERE id = ?
                 """, (row["id"],))
+                conn.commit()
+                conn.close()
 
-        except Exception:
-            pass
-
-    conn.commit()
-    conn.close()
+        except Exception as error:
+            print("REMINDER ERROR:", error, flush=True)
 
 
 # =========================
