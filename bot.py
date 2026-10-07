@@ -52,6 +52,26 @@ class HealthHandler(BaseHTTPRequestHandler):
         pass
 
 
+def keep_awake():
+    """Render bepul serveri 15 daqiqa so'rovsiz qolsa uxlaydi.
+    Bot har 10 daqiqada o'z manziliga so'rov yuborib, uyg'oq turadi."""
+    import time
+    import urllib.request
+
+    url = os.environ.get("RENDER_EXTERNAL_URL")
+
+    if not url:
+        return
+
+    while True:
+        time.sleep(600)
+
+        try:
+            urllib.request.urlopen(url, timeout=30).read()
+        except Exception as error:
+            print("KEEP AWAKE ERROR:", error, flush=True)
+
+
 def start_server():
     port = int(os.environ.get("PORT", "10000"))
     server = HTTPServer(("0.0.0.0", port), HealthHandler)
@@ -1341,6 +1361,11 @@ def main():
 
     threading.Thread(
         target=start_server,
+        daemon=True
+    ).start()
+
+    threading.Thread(
+        target=keep_awake,
         daemon=True
     ).start()
 
